@@ -1,0 +1,8 @@
+# Let the HTTP `default` user use the hydrolix_demo database in addition to `default`.
+# NOTE: this REPLACES the base users.yaml allow_databases, so both must be listed.
+users:
+  default:
+    allow_databases:
+      database:
+        - default
+        - hydrolix_demo

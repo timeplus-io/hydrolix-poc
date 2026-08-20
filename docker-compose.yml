@@ -1,0 +1,18 @@
+services:
+  timeplusd:
+    image: timeplus/timeplusd:latest
+    container_name: hydrolix-poc-timeplusd
+    ports:
+      - "18123:8123"   # ClickHouse-compatible HTTP (SQL)
+      - "13218:3218"   # Timeplus REST ingest
+      - "18463:8463"   # native TCP
+    volumes:
+      - timeplusd-data:/var/lib/timeplusd
+      - ./timeplusd/users.d/hydrolix_demo.yaml:/etc/timeplusd-server/users.d/hydrolix_demo.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8123/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+volumes:
+  timeplusd-data:
