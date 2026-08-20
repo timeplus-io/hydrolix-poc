@@ -37,6 +37,37 @@ echo "SELECT format_datetime(_tp_time,'%Y-%m-%dT%H:%M:%S.%fZ') ts, * FROM hydrol
 ./hdx.sh ingest sample.ndjson
 ```
 
+## Reading back from Hydrolix (url() + VIEW / TASK)
+
+The HTTP external stream is write-only (`NOT_IMPLEMENTED` on SELECT), so reads use the
+`url()` table function against Hydrolix's ClickHouse-compatible `/query` endpoint. `pipeline.sql`
+creates two read-path objects:
+
+| Object | What it does |
+|---|---|
+| `hydrolix_demo.hydrolix_recent` (VIEW) | Ad-hoc pull of the last 5 minutes of `timeplus.logs` with typed columns |
+| `hydrolix_demo.pull_hydrolix_stats` (TASK, every 1m) | Pulls per-service/level event count + latency stats for the last minute into stream `hydrolix_demo.hydrolix_service_stats` |
+
+```bash
+# ad-hoc query through the view (each SELECT hits Hydrolix)
+echo "SELECT service, level, count() AS c, round(avg(latency_ms),1) AS avg_ms
+      FROM hydrolix_demo.hydrolix_recent GROUP BY service, level ORDER BY c DESC" \
+  | curl -s 'http://localhost:18123/?default_format=PrettyCompact' --data-binary @-
+
+# snapshots accumulated by the scheduled task
+echo "SELECT * FROM table(hydrolix_demo.hydrolix_service_stats) ORDER BY pulled_at DESC LIMIT 20" \
+  | curl -s 'http://localhost:18123/?default_format=PrettyCompact' --data-binary @-
+
+# task management
+echo "SHOW TASKS FROM hydrolix_demo" | curl -s http://localhost:18123/ --data-binary @-
+echo "SYSTEM PAUSE TASK hydrolix_demo.pull_hydrolix_stats" | curl -s http://localhost:18123/ --data-binary @-
+```
+
+Gotchas for `url()` reads: the inner SQL must be URL-encoded and end with `FORMAT JSONEachRow`;
+Hydrolix uses ClickHouse camelCase function names (`toInt32OrZero`, not `to_int32_or_zero`);
+the token must go through `headers('Authorization'=...)` (a `?token=` query param is not accepted);
+and in this Timeplus version `CREATE TASK` takes `INTO target` *before* `AS`.
+
 ## Notes / gotchas
 
 - **Timestamp format**: the Hydrolix `timeplus` transform's primary `timestamp` column is a

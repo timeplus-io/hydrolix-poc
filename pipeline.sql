@@ -36,3 +36,42 @@ SELECT
   format_datetime(_tp_time, '%Y-%m-%dT%H:%M:%S.%fZ') AS timestamp,
   service, level, status, latency_ms, message
 FROM hydrolix_demo.logs_source;
+
+-- 4) Read path: ad-hoc VIEW over Hydrolix's ClickHouse-compatible /query endpoint (bounded pull).
+--    The HTTP external stream is write-only, so reads go through the url() table function.
+--    Inner SQL is URL-encoded and uses Hydrolix/ClickHouse camelCase function names;
+--    Hydrolix only accepts the token via the Authorization header (headers(...) is required).
+--    Usage: SELECT service, count() AS c FROM hydrolix_demo.hydrolix_recent GROUP BY service;
+CREATE VIEW IF NOT EXISTS hydrolix_demo.hydrolix_recent AS
+SELECT * FROM url(
+  'https://hdx-se-playpen.hydrolix.live/query?query=SELECT%20timestamp%2C%20catchall%5B%27service%27%5D%20AS%20service%2C%20catchall%5B%27level%27%5D%20AS%20level%2C%20toInt32OrZero%28catchall%5B%27status%27%5D%29%20AS%20status%2C%20toFloat64OrZero%28catchall%5B%27latency_ms%27%5D%29%20AS%20latency_ms%2C%20catchall%5B%27message%27%5D%20AS%20message%20FROM%20timeplus.logs%20WHERE%20timestamp%20%3E%20now%28%29%20-%20INTERVAL%205%20MINUTE%20ORDER%20BY%20timestamp%20DESC%20LIMIT%201000%20FORMAT%20JSONEachRow',
+  'JSONEachRow',
+  'timestamp string, service string, level string, status int32, latency_ms float64, message string',
+  headers('Authorization' = 'Bearer __HYDROLIX_SERVICE_TOKEN__')
+);
+
+-- 5) Read path: scheduled TASK that pulls per-service/level stats for the last minute
+--    from Hydrolix every minute and appends them to a local stream.
+--    Usage: SELECT * FROM table(hydrolix_demo.hydrolix_service_stats) ORDER BY pulled_at DESC;
+CREATE STREAM IF NOT EXISTS hydrolix_demo.hydrolix_service_stats (
+  pulled_at       datetime64(3, 'UTC'),
+  service         string,
+  level           string,
+  events          uint64,
+  avg_latency_ms  float64,
+  max_latency_ms  float64
+);
+
+CREATE TASK IF NOT EXISTS hydrolix_demo.pull_hydrolix_stats
+SCHEDULE 1m
+TIMEOUT 30s
+INTO hydrolix_demo.hydrolix_service_stats
+AS
+SELECT now64(3, 'UTC') AS pulled_at, service, level, events, avg_latency_ms, max_latency_ms
+FROM url(
+  'https://hdx-se-playpen.hydrolix.live/query?query=SELECT%20catchall%5B%27service%27%5D%20AS%20service%2C%20catchall%5B%27level%27%5D%20AS%20level%2C%20count%28%29%20AS%20events%2C%20avg%28toFloat64OrZero%28catchall%5B%27latency_ms%27%5D%29%29%20AS%20avg_latency_ms%2C%20max%28toFloat64OrZero%28catchall%5B%27latency_ms%27%5D%29%29%20AS%20max_latency_ms%20FROM%20timeplus.logs%20WHERE%20timestamp%20%3E%20now%28%29%20-%20INTERVAL%201%20MINUTE%20GROUP%20BY%20service%2C%20level%20FORMAT%20JSONEachRow',
+  'JSONEachRow',
+  'service string, level string, events uint64, avg_latency_ms float64, max_latency_ms float64',
+  headers('Authorization' = 'Bearer __HYDROLIX_SERVICE_TOKEN__')
+);
+
