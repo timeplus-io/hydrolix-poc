@@ -8,7 +8,7 @@ export TIMEPLUS_USER="${TIMEPLUS_USER:-default}" TIMEPLUS_PASSWORD="${TIMEPLUS_P
 python3 - <<'PY'
 import os, re, sys, urllib.request, base64
 sql = open("pipeline.sql").read().replace("__HYDROLIX_SERVICE_TOKEN__", os.environ["HYDROLIX_SERVICE_TOKEN"])
-sql = re.sub(r"--[^\n]*", "", sql)
+sql = re.sub(r"(?m)^\s*--[^\n]*", "", sql)  # strip full-line comments only (URLs may contain --)
 url = f"http://{os.environ['TIMEPLUS_HOST']}:{os.environ['TIMEPLUS_PORT']}/"
 auth = base64.b64encode(f"{os.environ['TIMEPLUS_USER']}:{os.environ['TIMEPLUS_PASSWORD']}".encode()).decode()
 for stmt in [s.strip() for s in sql.split(";") if s.strip()]:

@@ -63,7 +63,10 @@ echo "SHOW TASKS FROM hydrolix_demo" | curl -s http://localhost:18123/ --data-bi
 echo "SYSTEM PAUSE TASK hydrolix_demo.pull_hydrolix_stats" | curl -s http://localhost:18123/ --data-binary @-
 ```
 
-Gotchas for `url()` reads: the inner SQL must be URL-encoded and end with `FORMAT JSONEachRow`;
+Gotchas for `url()` reads: **Hydrolix caches results by query text**, so a fixed URL returns the same
+rows forever (the task stored identical snapshots every minute until this was fixed) — both objects
+therefore build the URL with `concat(..., '/* nocache <ms> */')` using `now64(3)`, which is evaluated
+on every execution; the inner SQL must be URL-encoded and end with `FORMAT JSONEachRow`;
 Hydrolix uses ClickHouse camelCase function names (`toInt32OrZero`, not `to_int32_or_zero`);
 the token must go through `headers('Authorization'=...)` (a `?token=` query param is not accepted);
 and in this Timeplus version `CREATE TASK` takes `INTO target` *before* `AS`.
