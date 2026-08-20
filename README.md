@@ -46,7 +46,7 @@ creates two read-path objects:
 | Object | What it does |
 |---|---|
 | `hydrolix_demo.hydrolix_recent` (VIEW) | Ad-hoc pull of the last 5 minutes of `timeplus.logs` with typed columns |
-| `hydrolix_demo.pull_hydrolix_stats` (TASK, every 1m) | Pulls per-service/level event count + latency stats for the last minute into stream `hydrolix_demo.hydrolix_service_stats` |
+| `hydrolix_demo.pull_hydrolix_stats` (TASK, every 1m) | Pulls per-service/level event count + avg/max latency for the **last completed minute that ended ≥60 s ago** (`minute_start`) into stream `hydrolix_demo.hydrolix_service_stats`. Not a rolling window: Hydrolix makes fresh rows visible out of order over ~15–20 s, so a rolling "last 60 s" count runs 15–25 % low. |
 
 ```bash
 # ad-hoc query through the view (each SELECT hits Hydrolix)
@@ -55,7 +55,7 @@ echo "SELECT service, level, count() AS c, round(avg(latency_ms),1) AS avg_ms
   | curl -s 'http://localhost:18123/?default_format=PrettyCompact' --data-binary @-
 
 # snapshots accumulated by the scheduled task
-echo "SELECT * FROM table(hydrolix_demo.hydrolix_service_stats) ORDER BY pulled_at DESC LIMIT 20" \
+echo "SELECT minute_start, sum(events) AS total FROM table(hydrolix_demo.hydrolix_service_stats) GROUP BY minute_start ORDER BY minute_start DESC LIMIT 10" \
   | curl -s 'http://localhost:18123/?default_format=PrettyCompact' --data-binary @-
 
 # task management
